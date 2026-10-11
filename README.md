@@ -1,23 +1,43 @@
 # lvc-template-registry
 
-Kho JSON template + thumbnail **miễn phí, công khai** cho app LVC Seedance. Dữ liệu nằm trong repo
-GitHub này (ai cũng xem được trực tiếp trên GitHub); một API nhỏ host trên Vercel đọc đúng các file
-này và trả JSON cho app gọi lên khi mở "Kho mẫu".
+Kho JSON template + thumbnail **miễn phí, công khai** cho app LVC Seedance. App đọc thẳng từ GitHub
+(không qua máy chủ trung gian nào) — mở tab "Miễn phí" trong "Kho mẫu" là gọi thẳng
+`raw.githubusercontent.com` lấy file `index.json` ở gốc repo này.
 
 Đây là repo **độc lập** với workspace Rust/Tauri chính (`lvc_affilate`) — không phải code của app,
-chỉ là nơi chứa dữ liệu mẫu + API đọc dữ liệu đó.
+chỉ là nơi chứa dữ liệu mẫu mà app đọc qua mạng.
 
-> Thiết kế đầy đủ (vì sao tách repo, hợp đồng dữ liệu, cách app sẽ tích hợp ở giai đoạn sau): xem
+> Thiết kế đầy đủ (vì sao tách repo, hợp đồng dữ liệu, ADR): xem
 > `docs/superpowers/specs/2026-10-11-remote-template-registry-design.md` và plan
 > `docs/superpowers/plans/2026-10-11-p7-remote-template-registry.md` trong repo `lvc_affilate`.
+> Đã tích hợp vào app (P7b) — provider Rust `crates/providers/lvc-template-registry`.
 
 ## Cấu trúc
 
 ```
-templates/<id>.json   1 file = 1 template (id, name, description, category, thumbnail, updatedAt, graph)
-thumbs/<id>.svg|png   ảnh thumbnail, đường dẫn tương đối "/thumbs/<id>.svg" trong file JSON
-api/templates/index.js    GET /api/templates      -> danh sách meta (không có graph)
-api/templates/[id].js     GET /api/templates/<id> -> 1 template đầy đủ (có graph)
+index.json             NGUỒN CHÍNH — 1 mảng, mỗi phần tử 1 template ĐẦY ĐỦ (kèm graph).
+                        App fetch URL này (xem DEFAULT_INDEX_URL trong provider Rust):
+                        https://raw.githubusercontent.com/GrayPham/lvc-template-registry/master/index.json
+thumbs/<id>.svg|png     ảnh thumbnail — index.json trỏ URL tuyệt đối raw.githubusercontent tới đây.
+templates/<id>.json     bản nháp từng template RIÊNG LẺ (tiện sửa/diff) — KHÔNG phải nguồn app đọc,
+                        chỉ để tham khảo/soạn trước khi gộp vào index.json.
+api/, vercel.json       scaffold Vercel dự phòng (CHƯA dùng) — nếu sau này cần CDN/cache tốt hơn
+                        thay vì gọi thẳng GitHub, xem mục 5.
+```
+
+Field của mỗi phần tử trong `index.json` (snake_case, khớp `RemoteTemplate` ở
+`crates/providers/lvc-template-registry/src/model.rs`):
+
+```jsonc
+{
+  "id": "ugc-unboxing-demo",       // slug on-nhu, chi chu thuong/so/gach ngang — khoa vinh vien
+  "name": "...",
+  "description": "...",
+  "category": "Bán hàng/Sản phẩm", // dung de nhom/loc trong gallery
+  "thumbnail": "https://raw.githubusercontent.com/GrayPham/lvc-template-registry/master/thumbs/<id>.svg",
+  "updated_at": 1791715752000.0,   // epoch MILLISECONDS, dat tay moi lan sua
+  "graph": { "version": 2, "nodes": [...], "edges": [...] } // Workflow JSON v2 cua app
+}
 ```
 
 `graph` phải là JSON hợp lệ theo schema Workflow v2 của app (xem file mẫu
@@ -25,71 +45,56 @@ api/templates/[id].js     GET /api/templates/<id> -> 1 template đầy đủ (c�
 
 ## Luật quan trọng — KHÔNG được chứa bí mật
 
-Repo này **public**. Mọi template thêm vào:
+Repo này **PHẢI public** (app đọc không cần token). Mọi template thêm vào:
 - Tham số `account`/`credential` của mọi node phải để **rỗng** (`""`) — không bao giờ dán cookie,
   API key, mật khẩu, proxy thật vào `graph`.
 - Không commit ảnh/dữ liệu có thông tin cá nhân của khách hàng thật.
 
 Tự review bằng mắt trước mỗi lần push — chưa có lint tự động kiểm điều này.
 
-## 1. Chạy thử cục bộ (trước khi deploy)
+## 1. Xác nhận repo đã PUBLIC
 
-Cần Node.js đã cài sẵn. Cài Vercel CLI (một lần):
-
-```powershell
-npm install -g vercel
-```
-
-Chạy dev server ngay trong thư mục này:
+Vào `github.com/GrayPham/lvc-template-registry` → Settings → Danger Zone → "Change visibility" →
+Public (nếu chưa). Hoặc qua CLI (cần `gh auth login` trước):
 
 ```powershell
-cd d:\LVCMedia\lvc-template-registry
-vercel dev
+gh repo edit GrayPham/lvc-template-registry --visibility public
 ```
 
-Mở `http://localhost:3000/api/templates` phải thấy JSON danh sách; mở
-`http://localhost:3000/api/templates/ugc-unboxing-demo` phải thấy JSON đầy đủ có `graph`.
+Kiểm tra đã public bằng cách mở (không cần đăng nhập gì):
+`https://raw.githubusercontent.com/GrayPham/lvc-template-registry/master/index.json`
 
-## 2. Tạo repo GitHub (khi bạn sẵn sàng public)
+## 2. Push `index.json` + `thumbs/`
 
 ```powershell
 cd d:\LVCMedia\lvc-template-registry
-git init
-git add .
-git commit -m "chore: scaffold template registry"
-gh repo create lvc-template-registry --public --source=. --remote=origin --push
+git add index.json thumbs README.md
+git commit -m "feat: index.json nguon chinh cho app doc truc tiep"
+git push
 ```
 
-(Cần `gh auth login` trước nếu chưa đăng nhập GitHub CLI.)
-
-## 3. Deploy lên Vercel
-
-Cách nhanh nhất — kết nối trực tiếp qua CLI (hỏi đăng nhập Vercel trong trình duyệt lần đầu):
-
-```powershell
-vercel          # deploy preview, hỏi vài câu (project name, chọn account)
-vercel --prod   # deploy production, ra URL kiểu https://lvc-template-registry.vercel.app
-```
-
-Hoặc vào `vercel.com` → "Add New Project" → chọn repo GitHub vừa tạo → Deploy (không cần chỉnh gì,
-không có framework, không có build step).
-
-Ghi lại URL production (vd `https://lvc-template-registry.vercel.app`) — đây là URL sẽ điền vào
-Settings của app ở giai đoạn P7b (chưa code).
-
-## 4. Thêm template mới (sau khi đã deploy)
+## 3. Thêm template mới
 
 1. Trong app, xây workflow mẫu trên canvas, "Lưu thành mẫu" để lấy đúng JSON `graph` (hoặc tự viết
-   tay theo cấu trúc file mẫu `templates/ugc-unboxing-demo.json`).
+   tay theo mẫu trong `index.json`).
 2. **Xoá hết bí mật** trong `graph` (mọi `account` → `""`).
-3. Thêm file `templates/<id-moi>.json` (id chỉ gồm chữ thường/số/gạch ngang, khớp tên file).
-4. Thêm ảnh `thumbs/<id-moi>.svg` hoặc `.png` (giữ nhẹ, vài trăm KB là đủ).
-5. Commit + push — Vercel tự deploy lại khi push lên nhánh chính (nếu đã nối GitHub integration);
-   nếu deploy bằng CLI tay thì chạy lại `vercel --prod`.
+3. Thêm 1 phần tử mới vào mảng `index.json` (id chỉ gồm chữ thường/số/gạch ngang, không trùng id
+   cũ).
+4. Thêm ảnh `thumbs/<id-moi>.svg` hoặc `.png` (giữ nhẹ, vài trăm KB là đủ), `thumbnail` trong
+   `index.json` trỏ URL `raw.githubusercontent.com` tới đúng ảnh đó.
+5. Commit + push. App cache theo lần mở tab "Miễn phí" tiếp theo — không cần làm gì thêm, không cần
+   build lại app.
 
-## 5. Khi nào app thật sự gọi được URL này?
+## 4. App đọc ra sao?
 
-Hiện tại (P7a) app **chưa biết** registry này tồn tại — đây chỉ là scaffold + hướng dẫn deploy theo
-yêu cầu "soạn code trước, tự deploy khi sẵn sàng". Việc app gọi lên URL này (tab "Kho mẫu" thêm
-nguồn thứ 3, cache offline, cấu hình URL trong Settings…) là **P7b**, chưa code — xem câu hỏi mở
-trong spec trước khi làm (tab riêng hay gộp vào Public? URL mặc định hay để trống?).
+`crates/providers/lvc-template-registry::RegistryClient` (trong `lvc_affilate`) GET thẳng
+`index.json`, cache vào SQLite (bảng `remote_templates_cache`), hiện trong tab "Miễn phí" của "Kho
+mẫu". Mất mạng → app tự dùng bản cache lần tải gần nhất. Đổi nguồn (fork repo riêng) → sửa
+`DEFAULT_INDEX_URL` trong `client.rs` (chưa cấu hình được qua Settings UI ở bản này).
+
+## 5. Phương án dự phòng: Vercel (chưa dùng)
+
+`api/`, `vercel.json`, `templates/*.json` trong repo này là scaffold cho phương án dùng Vercel làm
+lớp trung gian (2 endpoint `/api/templates`, `/api/templates/:id`) — hữu ích nếu sau này cần CDN/
+cache tốt hơn raw GitHub, hoặc muốn giữ repo nguồn PRIVATE (Vercel giữ token server-side). Hiện
+KHÔNG phải đường app dùng — có thể bỏ qua các file này.

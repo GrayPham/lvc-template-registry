@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ugc-unboxing-demo",
+    "name": "UGC Unboxing (demo miễn phí)",
+    "description": "Mẫu demo: nhân vật + sản phẩm → video giới thiệu kiểu UGC unboxing. Dùng thử trước khi tạo mẫu riêng của bạn.",
+    "category": "Bán hàng/Sản phẩm",
+    "thumbnail": "https://raw.githubusercontent.com/GrayPham/lvc-template-registry/master/thumbs/ugc-unboxing-demo.svg",
+    "updated_at": 1791715752000.0,
+    "graph": {
+      "version": 2,
+      "nodes": [
+        { "id": "model", "kind": { "kind": "image_upload", "paths": [], "label": "nhân vật" }, "x": 60, "y": 80 },
+        { "id": "product", "kind": { "kind": "image_upload", "paths": [], "label": "sản phẩm" }, "x": 60, "y": 300 },
+        { "id": "prompt", "kind": { "kind": "prompt", "text": "người mẫu mở hộp sản phẩm trước camera, quay dọc 9:16 kiểu UGC chân thực, ánh sáng tự nhiên, khẩu hình như đang giới thiệu, kết thúc bằng nụ cười và chỉ tay vào sản phẩm" }, "x": 60, "y": 520 },
+        { "id": "video", "kind": { "kind": "dola_video", "mode": "fast", "model": "seedance-2.5", "ratio": "9:16", "duration": 10, "logo": "off", "account": "" }, "x": 470, "y": 240 },
+        { "id": "save", "kind": { "kind": "save", "out_dir": "" }, "x": 840, "y": 240 }
+      ],
+      "edges": [
+        { "id": "e1", "from": "model", "from_port": "out", "to": "video", "to_port": "refs" },
+        { "id": "e2", "from": "product", "from_port": "out", "to": "video", "to_port": "refs" },
+        { "id": "e3", "from": "prompt", "from_port": "out", "to": "video", "to_port": "prompt" },
+        { "id": "e4", "from": "video", "from_port": "out", "to": "save", "to_port": "video" }
+      ]
+    }
+  }
+]
